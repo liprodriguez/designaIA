@@ -784,7 +784,11 @@ export default function Home() {
                                     {cat.name}
                                   </span>
                                   <div className="flex items-center gap-1">
-                                    {assign?.confirmed && <Check size={14} className="text-green-600 font-bold" title="Confirmado" />}
+                                    {assign?.confirmed && (
+                                      <span title="Confirmado">
+                                        <Check size={14} className="text-green-600 font-bold" />
+                                      </span>
+                                    )}
                                     {isAdmin && assign && (
                                       <button 
                                         onClick={() => handleShareIndividualWhatsApp(assign.userId, cat.id, e.date)}
@@ -943,12 +947,6 @@ export default function Home() {
                                 className="text-xs bg-blue-600 text-white px-2 py-1 rounded-lg hover:bg-blue-700"
                               >
                                 Gerar
-                              </button>
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleManualAssignment(event.id); }}
-                                className="text-xs bg-gray-500 text-white px-2 py-1 rounded-lg hover:bg-gray-600"
-                              >
-                                Manual
                               </button>
                               {event.assignments.slice(0, 2).map(a => {
                                 const u = users.find(u => u.id === a.userId);
