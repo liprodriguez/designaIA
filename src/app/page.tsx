@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { User, Category, EventSchedule, AuthState, UserRole } from "@/types";
 import { MOCK_USERS, MOCK_CATEGORIES } from "@/lib/mockData";
 import { generateAutoSchedule } from "@/lib/scheduler";
+import { supabase } from "@/lib/supabase";
 import { 
   format, 
   startOfMonth, 
@@ -97,6 +98,34 @@ export default function Home() {
     
     if (savedAuth) setAuth(JSON.parse(savedAuth));
     if (savedTemplate) setWhatsappTemplate(savedTemplate);
+
+    // Sincronizar com Supabase se disponível
+    const syncWithSupabase = async () => {
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+        console.log("Sincronizando dados com Supabase...");
+        try {
+          const { data: dbUsers, error } = await supabase.from('perfis').select('*');
+          if (error) throw error;
+          if (dbUsers) {
+            const mappedUsers: User[] = dbUsers.map(u => ({
+              ...u,
+              role: u.role as UserRole,
+              linkedCategories: u.linked_categories || [],
+              historyCount: u.history_count || 0,
+              totalEvents: u.total_events || 0,
+              lastParticipation: u.last_participation || null,
+              roleStats: u.role_stats || {},
+              isActive: u.is_active ?? true
+            }));
+            setUsers(mappedUsers);
+          }
+        } catch (err: any) {
+          console.error("Erro na sincronização inicial com Supabase:", err.message);
+        }
+      }
+    };
+
+    syncWithSupabase();
   }, []);
 
   useEffect(() => {
@@ -109,40 +138,111 @@ export default function Home() {
     }
   }, [users, categories, events, auth, whatsappTemplate, isClient]);
 
+  // --- Utils ---
+  const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
+
   // --- Auth Handlers ---
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const user = users.find(u => u.phone === loginPhone && u.password === loginPass);
-    if (user) {
-      setAuth({ user, isAuthenticated: true });
-    } else {
-      alert("Telefone ou senha incorretos.");
+    const cleanPhone = normalizePhone(loginPhone.trim());
+    const cleanPass = loginPass.trim();
+
+    console.log("Iniciando tentativa de login:", { phone: cleanPhone });
+
+    try {
+      // 1. Tentar Login via Supabase (se configurado)
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+        // Consultando a tabela 'perfis' conforme solicitado
+        const { data: profile, error } = await supabase
+          .from('perfis')
+          .select('*')
+          .eq('phone', cleanPhone)
+          .eq('password', cleanPass) // Comparação direta conforme solicitado
+          .single();
+
+        if (error) {
+          console.error("Erro na consulta ao Supabase (tabela perfis):", error.message);
+          throw new Error(error.message);
+        }
+
+        if (profile) {
+          console.log("Login via Supabase bem-sucedido:", profile.name);
+          setAuth({ 
+            user: {
+              ...profile,
+              role: profile.role as UserRole,
+              linkedCategories: profile.linked_categories || []
+            }, 
+            isAuthenticated: true 
+          });
+          return;
+        }
+      }
+
+      // 2. Fallback para LocalStorage (Mock)
+      const user = users.find(u => normalizePhone(u.phone) === cleanPhone && u.password === cleanPass);
+      if (user) {
+        console.log("Login via LocalStorage bem-sucedido:", user.name);
+        setAuth({ user, isAuthenticated: true });
+      } else {
+        console.error("Erro de autenticação: Credenciais não encontradas em nenhuma fonte.");
+        alert("Telefone ou senha incorretos.");
+      }
+    } catch (err: any) {
+      console.error("Falha crítica no processo de login:", err.message);
+      alert(`Erro ao realizar login: ${err.message}`);
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (users.some(u => u.phone === regPhone)) {
-      alert("Telefone já cadastrado.");
-      return;
+    const cleanPhone = normalizePhone(regPhone.trim());
+    const cleanName = regName.trim();
+    const cleanPass = regPass.trim();
+
+    try {
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+        const { error } = await supabase
+          .from('perfis')
+          .insert([{ 
+            name: cleanName, 
+            phone: cleanPhone, 
+            password: cleanPass,
+            role: "USER",
+            linked_categories: [],
+            history_count: 0,
+            total_events: 0,
+            is_active: true
+          }]);
+
+        if (error) {
+          console.error("Erro ao registrar no Supabase:", error.message);
+          alert(`Erro no cadastro: ${error.message}`);
+          return;
+        }
+      }
+
+      // Registro local também para manter consistência no protótipo
+      const newUser: User = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: cleanName,
+        phone: cleanPhone,
+        password: cleanPass,
+        role: "USER",
+        linkedCategories: [],
+        historyCount: 0,
+        totalEvents: 0,
+        lastParticipation: null,
+        roleStats: {},
+        priorityReplenishment: false,
+        isActive: true
+      };
+      setUsers([...users, newUser]);
+      setIsRegistering(false);
+      alert("Cadastro realizado com sucesso!");
+    } catch (err: any) {
+      console.error("Falha no cadastro:", err.message);
     }
-    const newUser: User = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: regName,
-      phone: regPhone,
-      password: regPass,
-      role: "USER",
-      linkedCategories: [],
-      historyCount: 0,
-      totalEvents: 0,
-      lastParticipation: null,
-      roleStats: {},
-      priorityReplenishment: false,
-      isActive: true
-    };
-    setUsers([...users, newUser]);
-    setIsRegistering(false);
-    alert("Cadastro realizado! Agora faça login.");
   };
 
   const handleLogout = () => {
@@ -318,51 +418,95 @@ export default function Home() {
     window.open(`https://api.whatsapp.com/send?phone=${user.phone.replace(/\D/g, '')}&text=${encodeURIComponent(message)}`, "_blank");
   };
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingUser && users.some(u => u.phone === newUserPhone)) {
+    const cleanPhone = normalizePhone(newUserPhone.trim());
+    const cleanName = newUserName.trim();
+    const cleanPass = newUserPass.trim();
+
+    if (!editingUser && users.some(u => normalizePhone(u.phone) === cleanPhone)) {
       alert("Telefone já cadastrado.");
       return;
     }
 
-    if (editingUser) {
-      const updatedUser: User = {
-        ...editingUser,
-        name: newUserName,
-        phone: newUserPhone,
-        password: newUserPass || editingUser.password,
-        role: newUserRole,
-        linkedCategories: newUserCats,
-      };
-      setUsers(users.map(u => u.id === editingUser.id ? updatedUser : u));
-      setEditingUser(null);
-      alert("Usuário atualizado com sucesso!");
-    } else {
-      const newUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
-        name: newUserName,
-        phone: newUserPhone,
-        password: newUserPass || "designa123", // Default password if empty
-        role: newUserRole,
-        linkedCategories: newUserCats,
-        historyCount: 0,
-        totalEvents: 0,
-        lastParticipation: null,
-        roleStats: {},
-        priorityReplenishment: false,
-        isActive: true
-      };
-      setUsers([...users, newUser]);
-      setLastCreatedUser(newUser);
-    }
+    try {
+      if (editingUser) {
+        if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+          const { error } = await supabase
+            .from('perfis')
+            .update({
+              name: cleanName,
+              phone: cleanPhone,
+              password: cleanPass || editingUser.password,
+              role: newUserRole,
+              linked_categories: newUserCats
+            })
+            .eq('id', editingUser.id);
 
-    setIsNewUserModalOpen(false);
-    // Reset form
-    setNewUserName("");
-    setNewUserPhone("");
-    setNewUserPass("");
-    setNewUserRole("USER");
-    setNewUserCats([]);
+          if (error) throw error;
+        }
+
+        const updatedUser: User = {
+          ...editingUser,
+          name: cleanName,
+          phone: cleanPhone,
+          password: cleanPass || editingUser.password,
+          role: newUserRole,
+          linkedCategories: newUserCats,
+        };
+        setUsers(users.map(u => u.id === editingUser.id ? updatedUser : u));
+        setEditingUser(null);
+        alert("Usuário atualizado com sucesso!");
+      } else {
+        const userId = Math.random().toString(36).substr(2, 9);
+        
+        if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+          const { error } = await supabase
+            .from('perfis')
+            .insert([{
+              id: userId,
+              name: cleanName,
+              phone: cleanPhone,
+              password: cleanPass || "designa123",
+              role: newUserRole,
+              linked_categories: newUserCats,
+              history_count: 0,
+              total_events: 0,
+              is_active: true
+            }]);
+
+          if (error) throw error;
+        }
+
+        const newUser: User = {
+          id: userId,
+          name: cleanName,
+          phone: cleanPhone,
+          password: cleanPass || "designa123", // Default password if empty
+          role: newUserRole,
+          linkedCategories: newUserCats,
+          historyCount: 0,
+          totalEvents: 0,
+          lastParticipation: null,
+          roleStats: {},
+          priorityReplenishment: false,
+          isActive: true
+        };
+        setUsers([...users, newUser]);
+        setLastCreatedUser(newUser);
+      }
+
+      setIsNewUserModalOpen(false);
+      // Reset form
+      setNewUserName("");
+      setNewUserPhone("");
+      setNewUserPass("");
+      setNewUserRole("USER");
+      setNewUserCats([]);
+    } catch (err: any) {
+      console.error("Erro ao salvar usuário:", err.message);
+      alert(`Erro ao salvar: ${err.message}`);
+    }
   };
 
   const handleEditUser = (user: User) => {
@@ -375,14 +519,26 @@ export default function Home() {
     setIsNewUserModalOpen(true);
   };
 
-  const handleDeleteUser = (userId: string) => {
+  const handleDeleteUser = async (userId: string) => {
     if (userId === auth.user?.id) {
       alert("Você não pode excluir a sua própria conta.");
       return;
     }
     if (confirm("Tem certeza que deseja excluir este usuário? Todas as suas designações passadas serão mantidas no histórico.")) {
-      setUsers(users.filter(u => u.id !== userId));
-      alert("Usuário removido com sucesso!");
+      try {
+        if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+          const { error } = await supabase
+            .from('perfis')
+            .delete()
+            .eq('id', userId);
+          if (error) throw error;
+        }
+        setUsers(users.filter(u => u.id !== userId));
+        alert("Usuário removido com sucesso!");
+      } catch (err: any) {
+        console.error("Erro ao excluir usuário no Supabase:", err.message);
+        alert(`Erro ao excluir: ${err.message}`);
+      }
     }
   };
 
@@ -1057,7 +1213,21 @@ export default function Home() {
                       <td className="p-4">
                         <select 
                           value={user.role}
-                          onChange={e => setUsers(users.map(u => u.id === user.id ? { ...u, role: e.target.value as UserRole } : u))}
+                          onChange={async (e) => {
+                            const newRole = e.target.value as UserRole;
+                            try {
+                              if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+                                const { error } = await supabase
+                                  .from('perfis')
+                                  .update({ role: newRole })
+                                  .eq('id', user.id);
+                                if (error) throw error;
+                              }
+                              setUsers(users.map(u => u.id === user.id ? { ...u, role: newRole } : u));
+                            } catch (err: any) {
+                              console.error("Erro ao atualizar perfil do usuário:", err.message);
+                            }
+                          }}
                           className="text-xs font-bold p-1 rounded bg-zinc-100 outline-none"
                         >
                           <option value="ADMIN">ADMIN</option>
@@ -1069,12 +1239,24 @@ export default function Home() {
                           {categories.map(cat => (
                             <button
                               key={cat.id}
-                              onClick={() => {
+                              onClick={async () => {
                                 const linked = user.linkedCategories.includes(cat.id);
                                 const newList = linked 
                                   ? user.linkedCategories.filter(id => id !== cat.id)
                                   : [...user.linkedCategories, cat.id];
-                                setUsers(users.map(u => u.id === user.id ? { ...u, linkedCategories: newList } : u));
+                                
+                                try {
+                                  if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+                                    const { error } = await supabase
+                                      .from('perfis')
+                                      .update({ linked_categories: newList })
+                                      .eq('id', user.id);
+                                    if (error) throw error;
+                                  }
+                                  setUsers(users.map(u => u.id === user.id ? { ...u, linkedCategories: newList } : u));
+                                } catch (err: any) {
+                                  console.error("Erro ao atualizar categoria do usuário:", err.message);
+                                }
                               }}
                               className={`text-[10px] px-2 py-0.5 rounded-full border transition-all ${
                                 user.linkedCategories.includes(cat.id)
