@@ -124,7 +124,7 @@ export default function Home() {
               totalEvents: u.total_events || 0,
               lastParticipation: u.last_participation || null,
               roleStats: u.role_stats || {},
-              isActive: u.is_active ?? true
+              isActive: true
             }));
             
             // Unicidade absoluta por ID para evitar erro de chaves duplicadas no React
@@ -277,8 +277,7 @@ export default function Home() {
             role: "USER",
             linked_categories: [],
             history_count: 0,
-            total_events: 0,
-            is_active: true
+            total_events: 0
           }]);
 
         if (error) {
@@ -538,8 +537,7 @@ export default function Home() {
               role: newUserRole,
               linked_categories: newUserCats,
               history_count: 0,
-              total_events: 0,
-              is_active: true
+              total_events: 0
             }]);
 
           if (error) throw error;
