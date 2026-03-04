@@ -941,9 +941,7 @@ export default function Home() {
                                   </span>
                                   <div className="flex items-center gap-1">
                                     {assign?.confirmed && (
-                                      <span title="Confirmado">
-                                        <Check size={14} className="text-green-600 font-bold" />
-                                      </span>
+                                      <Check size={14} className="text-green-600 font-bold" />
                                     )}
                                     {isAdmin && assign && (
                                       <button 
