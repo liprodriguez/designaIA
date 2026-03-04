@@ -101,7 +101,7 @@ export default function Home() {
 
     // Sincronizar com Supabase se disponível
     const syncWithSupabase = async () => {
-      if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      if (isSupabaseConfigured()) {
         console.log("Sincronizando dados com Supabase...");
         try {
           const { data: dbUsers, error } = await supabase.from('perfis').select('*');
@@ -140,6 +140,13 @@ export default function Home() {
 
   // --- Utils ---
   const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
+  
+  const isSupabaseConfigured = () => {
+    return process.env.NEXT_PUBLIC_SUPABASE_URL && 
+           !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder') &&
+           process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+           !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.includes('placeholder');
+  };
 
   // --- Auth Handlers ---
   const handleLogin = async (e: React.FormEvent) => {
@@ -151,18 +158,19 @@ export default function Home() {
 
     try {
       // 1. Tentar Login via Supabase (se configurado)
-      if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      if (isSupabaseConfigured()) {
         // Consultando a tabela 'perfis' conforme solicitado
+        // Usamos maybeSingle() para evitar erro 406 caso o usuário não exista
         const { data: profile, error } = await supabase
           .from('perfis')
           .select('*')
           .eq('phone', cleanPhone)
-          .eq('password', cleanPass) // Comparação direta conforme solicitado
-          .single();
+          .eq('password', cleanPass)
+          .maybeSingle();
 
         if (error) {
-          console.error("Erro na consulta ao Supabase (tabela perfis):", error.message);
-          throw new Error(error.message);
+          console.error("Erro técnico na consulta ao Supabase:", error.message);
+          // Não lançamos erro aqui para permitir o fallback para LocalStorage se necessário
         }
 
         if (profile) {
@@ -176,6 +184,8 @@ export default function Home() {
             isAuthenticated: true 
           });
           return;
+        } else {
+          console.log("Usuário não encontrado no Supabase para este telefone/senha.");
         }
       }
 
@@ -201,7 +211,7 @@ export default function Home() {
     const cleanPass = regPass.trim();
 
     try {
-      if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      if (isSupabaseConfigured()) {
         const { error } = await supabase
           .from('perfis')
           .insert([{ 
@@ -431,7 +441,7 @@ export default function Home() {
 
     try {
       if (editingUser) {
-        if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+        if (isSupabaseConfigured()) {
           const { error } = await supabase
             .from('perfis')
             .update({
@@ -460,7 +470,7 @@ export default function Home() {
       } else {
         const userId = Math.random().toString(36).substr(2, 9);
         
-        if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+        if (isSupabaseConfigured()) {
           const { error } = await supabase
             .from('perfis')
             .insert([{
@@ -526,7 +536,7 @@ export default function Home() {
     }
     if (confirm("Tem certeza que deseja excluir este usuário? Todas as suas designações passadas serão mantidas no histórico.")) {
       try {
-        if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+        if (isSupabaseConfigured()) {
           const { error } = await supabase
             .from('perfis')
             .delete()
@@ -1214,7 +1224,7 @@ export default function Home() {
                           onChange={async (e) => {
                             const newRole = e.target.value as UserRole;
                             try {
-                              if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+                              if (isSupabaseConfigured()) {
                                 const { error } = await supabase
                                   .from('perfis')
                                   .update({ role: newRole })
@@ -1244,7 +1254,7 @@ export default function Home() {
                                   : [...user.linkedCategories, cat.id];
                                 
                                 try {
-                                  if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+                                  if (isSupabaseConfigured()) {
                                     const { error } = await supabase
                                       .from('perfis')
                                       .update({ linked_categories: newList })
