@@ -20,7 +20,7 @@ export const MOCK_USERS: User[] = [
   {
     id: "admin_1",
     name: "Administrador",
-    phone: "11999999999",
+    phone: "admin",
     password: "admin",
     role: "ADMIN",
     linkedCategories: MOCK_CATEGORIES.map(c => c.id),

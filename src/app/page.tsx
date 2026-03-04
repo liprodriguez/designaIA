@@ -139,7 +139,10 @@ export default function Home() {
   }, [users, categories, events, auth, whatsappTemplate, isClient]);
 
   // --- Utils ---
-  const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
+  const normalizePhone = (phone: string) => {
+    if (phone.toLowerCase() === "admin") return "admin";
+    return phone.replace(/\D/g, "");
+  };
   
   const isSupabaseConfigured = () => {
     return process.env.NEXT_PUBLIC_SUPABASE_URL && 
@@ -726,8 +729,8 @@ export default function Home() {
             <form onSubmit={handleLogin} className="space-y-4">
               <h2 className="text-xl font-semibold mb-4">Login</h2>
               <input
-                type="tel"
-                placeholder="Telefone"
+                type="text"
+                placeholder="Usuário ou Telefone"
                 required
                 className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
                 value={loginPhone}
@@ -744,10 +747,14 @@ export default function Home() {
               <button className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 transition-colors">
                 Entrar
               </button>
+              <div className="bg-zinc-50 p-3 rounded-lg border border-zinc-100 mt-4">
+                <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-widest mb-1">Acesso Rápido</p>
+                <p className="text-xs text-zinc-500">Usuário: <code className="font-bold text-blue-600">admin</code> | Senha: <code className="font-bold text-blue-600">admin</code></p>
+              </div>
               <button 
                 type="button"
                 onClick={() => setIsRegistering(true)}
-                className="w-full text-zinc-500 text-sm"
+                className="w-full text-zinc-500 text-sm pt-2"
               >
                 Não tem conta? Cadastre-se
               </button>
