@@ -67,11 +67,13 @@ export default function Home() {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [regName, setRegName] = useState("");
+  const [regLogin, setRegLogin] = useState("");
   const [regPhone, setRegPhone] = useState("");
   const [regPass, setRegPass] = useState("");
 
   // New User Modal States
   const [newUserName, setNewUserName] = useState("");
+  const [newUserLogin, setNewUserLogin] = useState("");
   const [newUserPhone, setNewUserPhone] = useState("");
   const [newUserPass, setNewUserPass] = useState("");
   const [newUserRole, setNewUserRole] = useState<UserRole>("USER");
@@ -253,26 +255,34 @@ export default function Home() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPhone = normalizePhone(regPhone.trim());
+    const cleanLogin = regLogin.trim();
     const cleanName = regName.trim();
     const cleanPass = regPass.trim();
 
     // Verificação de duplicidade local
-    if (users.some(u => normalizePhone(u.phone) === cleanPhone)) {
-      alert("Este telefone já está cadastrado no sistema.");
+    const userExists = users.some(u => 
+      (cleanPhone && normalizePhone(u.phone) === cleanPhone) || 
+      (cleanLogin && u.phone === cleanLogin)
+    );
+
+    if (userExists) {
+      alert("Este usuário ou telefone já está cadastrado no sistema.");
       return;
     }
 
     const userId = Math.random().toString(36).substr(2, 9);
+    // Usamos o login se preenchido, caso contrário o telefone
+    const loginIdentifier = cleanLogin || cleanPhone;
 
     try {
       if (isSupabaseConfigured()) {
-        console.log("Registrando no Supabase:", { name: cleanName, phone: cleanPhone });
+        console.log("Registrando no Supabase:", { name: cleanName, identifier: loginIdentifier });
         const { error } = await supabase
           .from('perfis')
           .insert([{ 
             id: userId,
             name: cleanName, 
-            phone: cleanPhone, 
+            phone: loginIdentifier, 
             password: cleanPass,
             role: "USER",
             linked_categories: [],
@@ -291,7 +301,7 @@ export default function Home() {
       const newUser: User = {
         id: userId,
         name: cleanName,
-        phone: cleanPhone,
+        phone: loginIdentifier,
         password: cleanPass,
         role: "USER",
         linkedCategories: [],
@@ -304,6 +314,11 @@ export default function Home() {
       };
       setUsers([...users, newUser]);
       setIsRegistering(false);
+      // Limpar formulário
+      setRegName("");
+      setRegLogin("");
+      setRegPhone("");
+      setRegPass("");
       alert("Cadastro realizado com sucesso! Agora você pode fazer login.");
     } catch (err: any) {
       console.error("Falha no processo de cadastro:", err.message);
@@ -487,11 +502,14 @@ export default function Home() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPhone = normalizePhone(newUserPhone.trim());
+    const cleanLogin = newUserLogin.trim();
     const cleanName = newUserName.trim();
     const cleanPass = newUserPass.trim();
 
-    if (!editingUser && users.some(u => normalizePhone(u.phone) === cleanPhone)) {
-      alert("Telefone já cadastrado.");
+    const loginIdentifier = cleanLogin || cleanPhone;
+
+    if (!editingUser && users.some(u => u.phone === loginIdentifier)) {
+      alert("Usuário ou Telefone já cadastrado.");
       return;
     }
 
@@ -502,7 +520,7 @@ export default function Home() {
             .from('perfis')
             .update({
               name: cleanName,
-              phone: cleanPhone,
+              phone: loginIdentifier,
               password: cleanPass || editingUser.password,
               role: newUserRole,
               linked_categories: newUserCats
@@ -515,7 +533,7 @@ export default function Home() {
         const updatedUser: User = {
           ...editingUser,
           name: cleanName,
-          phone: cleanPhone,
+          phone: loginIdentifier,
           password: cleanPass || editingUser.password,
           role: newUserRole,
           linkedCategories: newUserCats,
@@ -532,7 +550,7 @@ export default function Home() {
             .insert([{
               id: userId,
               name: cleanName,
-              phone: cleanPhone,
+              phone: loginIdentifier,
               password: cleanPass || "designa123",
               role: newUserRole,
               linked_categories: newUserCats,
@@ -546,7 +564,7 @@ export default function Home() {
         const newUser: User = {
           id: userId,
           name: cleanName,
-          phone: cleanPhone,
+          phone: loginIdentifier,
           password: cleanPass || "designa123", // Default password if empty
           role: newUserRole,
           linkedCategories: newUserCats,
@@ -564,6 +582,7 @@ export default function Home() {
       setIsNewUserModalOpen(false);
       // Reset form
       setNewUserName("");
+      setNewUserLogin("");
       setNewUserPhone("");
       setNewUserPass("");
       setNewUserRole("USER");
@@ -577,7 +596,15 @@ export default function Home() {
   const handleEditUser = (user: User) => {
     setEditingUser(user);
     setNewUserName(user.name);
-    setNewUserPhone(user.phone);
+    // Tenta identificar se o phone é um username ou telefone real
+    const isPhone = /^\d+$/.test(user.phone);
+    if (isPhone) {
+      setNewUserPhone(user.phone);
+      setNewUserLogin("");
+    } else {
+      setNewUserLogin(user.phone);
+      setNewUserPhone("");
+    }
     setNewUserPass(""); // We don't show the password
     setNewUserRole(user.role);
     setNewUserCats(user.linkedCategories);
@@ -713,40 +740,62 @@ export default function Home() {
 
           {isRegistering ? (
             <form onSubmit={handleRegister} className="space-y-4">
-              <h2 className="text-xl font-semibold mb-4">Criar Conta</h2>
-              <input
-                type="text"
-                placeholder="Nome Completo"
-                required
-                className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
-                value={regName}
-                onChange={e => setRegName(e.target.value)}
-              />
-              <input
-                type="tel"
-                placeholder="Telefone"
-                required
-                className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
-                value={regPhone}
-                onChange={e => setRegPhone(e.target.value)}
-              />
-              <input
-                type="password"
-                placeholder="Senha"
-                required
-                className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
-                value={regPass}
-                onChange={e => setRegPass(e.target.value)}
-              />
-              <button className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 transition-colors">
-                Cadastrar
+              <h2 className="text-xl font-semibold mb-4 text-center">Criar Conta</h2>
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  placeholder="Nome Completo"
+                  required
+                  className="w-full p-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  value={regName}
+                  onChange={e => setRegName(e.target.value)}
+                />
+                
+                <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100 mb-2">
+                  <p className="text-[10px] text-blue-600 uppercase font-bold tracking-widest mb-2 text-center">Identificação de Acesso</p>
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Username (Ex: joao.silva)"
+                      className="w-full p-2.5 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white"
+                      value={regLogin}
+                      onChange={e => setRegLogin(e.target.value)}
+                    />
+                    <div className="flex items-center gap-2">
+                      <div className="h-[1px] bg-blue-200 flex-1"></div>
+                      <span className="text-[10px] text-blue-400 font-bold">OU</span>
+                      <div className="h-[1px] bg-blue-200 flex-1"></div>
+                    </div>
+                    <input
+                      type="tel"
+                      placeholder="Telefone (Apenas números)"
+                      className="w-full p-2.5 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white"
+                      value={regPhone}
+                      onChange={e => setRegPhone(e.target.value)}
+                    />
+                  </div>
+                  <p className="text-[9px] text-blue-400 mt-2 text-center">Preencha ao menos um dos campos acima para logar.</p>
+                </div>
+
+                <input
+                  type="password"
+                  placeholder="Senha"
+                  required
+                  className="w-full p-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  value={regPass}
+                  onChange={e => setRegPass(e.target.value)}
+                />
+              </div>
+              
+              <button className="w-full bg-blue-600 text-white p-3.5 rounded-xl font-bold hover:bg-blue-700 transition-all active:scale-[0.98] shadow-sm mt-2">
+                Cadastrar Agora
               </button>
               <button 
                 type="button"
                 onClick={() => setIsRegistering(false)}
-                className="w-full text-zinc-500 text-sm"
+                className="w-full text-zinc-500 text-sm font-medium hover:text-blue-600 transition-colors"
               >
-                Já tenho conta? Login
+                Já tenho conta? <span className="text-blue-600">Fazer Login</span>
               </button>
             </form>
           ) : (
@@ -1712,7 +1761,7 @@ export default function Home() {
                 </button>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-zinc-500 uppercase">Nome Completo</label>
                   <input
@@ -1725,11 +1774,20 @@ export default function Home() {
                   />
                 </div>
                 <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-500 uppercase">Login/Username</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: joao.silva"
+                    className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
+                    value={newUserLogin}
+                    onChange={e => setNewUserLogin(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
                   <label className="text-xs font-bold text-zinc-500 uppercase">Telefone</label>
                   <input
                     type="tel"
                     placeholder="(00) 00000-0000"
-                    required
                     className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
                     value={newUserPhone}
                     onChange={e => setNewUserPhone(e.target.value)}
