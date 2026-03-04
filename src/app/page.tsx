@@ -63,6 +63,8 @@ export default function Home() {
   // Form states
   const [loginPhone, setLoginPhone] = useState("");
   const [loginPass, setLoginPass] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [regName, setRegName] = useState("");
   const [regPhone, setRegPhone] = useState("");
@@ -88,8 +90,18 @@ export default function Home() {
     const savedAuth = localStorage.getItem("designaia_auth");
     const savedTemplate = localStorage.getItem("designaia_template");
 
-    if (savedUsers) setUsers(JSON.parse(savedUsers));
-    else setUsers(MOCK_USERS);
+    if (savedUsers) {
+      const parsed = JSON.parse(savedUsers);
+      // Garantir que o admin/admin padrão sempre exista, mesmo com dados antigos
+      const hasAdmin = parsed.some((u: User) => u.phone === "admin");
+      if (!hasAdmin) {
+        setUsers([...parsed, MOCK_USERS[0]]);
+      } else {
+        setUsers(parsed);
+      }
+    } else {
+      setUsers(MOCK_USERS);
+    }
 
     if (savedCats) setCategories(JSON.parse(savedCats));
     else setCategories(MOCK_CATEGORIES);
@@ -154,16 +166,20 @@ export default function Home() {
   // --- Auth Handlers ---
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoginError(null);
+    setIsAuthenticating(true);
+    
     const cleanPhone = normalizePhone(loginPhone.trim());
     const cleanPass = loginPass.trim();
 
     console.log("Iniciando tentativa de login:", { phone: cleanPhone });
 
     try {
+      let loggedUser: User | null = null;
+
       // 1. Tentar Login via Supabase (se configurado)
       if (isSupabaseConfigured()) {
         console.log("Consultando Supabase por telefone...");
-        // Buscamos apenas pelo telefone para ter mais clareza no erro se a senha falhar
         const { data: profiles, error } = await supabase
           .from('perfis')
           .select('*')
@@ -174,53 +190,54 @@ export default function Home() {
         }
 
         if (profiles && profiles.length > 0) {
-          // Encontrou usuário(s) com este telefone
           const profile = profiles.find(p => p.password === cleanPass);
-          
           if (profile) {
             console.log("Login via Supabase bem-sucedido:", profile.name);
-            setAuth({ 
-              user: {
-                ...profile,
-                role: profile.role as UserRole,
-                linkedCategories: profile.linked_categories || []
-              }, 
-              isAuthenticated: true 
-            });
-            return;
+            loggedUser = {
+              ...profile,
+              role: profile.role as UserRole,
+              linkedCategories: profile.linked_categories || []
+            };
           } else {
             console.warn("Usuário encontrado no Supabase, mas a senha não confere.");
-            // Não retornamos aqui para tentar o fallback local se necessário
           }
-        } else {
-          console.log("Nenhum usuário encontrado no Supabase com este telefone:", cleanPhone);
         }
       }
 
-      // 2. Fallback para LocalStorage (Mock)
-      console.log("Tentando fallback para usuários locais/mock. Total carregado:", users.length);
-      const user = users.find(u => {
-        const uPhone = normalizePhone(u.phone);
-        const match = uPhone === cleanPhone && u.password === cleanPass;
-        return match;
-      });
+      // 2. Fallback para LocalStorage/Mock se não logou via Supabase
+      if (!loggedUser) {
+        console.log("Tentando fallback para usuários locais/mock. Total usuários:", users.length);
+        const user = users.find(u => {
+          const uPhone = normalizePhone(u.phone);
+          const matchPhone = uPhone === cleanPhone;
+          const matchPass = u.password === cleanPass;
+          
+          if (matchPhone && !matchPass) {
+            console.warn("Usuário local encontrado, mas a senha falhou na comparação.");
+          }
+          
+          return matchPhone && matchPass;
+        });
 
-      if (user) {
-        console.log("Login via LocalStorage/Mock bem-sucedido:", user.name);
-        setAuth({ user, isAuthenticated: true });
-      } else {
-        // Log detalhado para ajudar o desenvolvedor a entender por que falhou
-        const userByPhone = users.find(u => normalizePhone(u.phone) === cleanPhone);
-        if (userByPhone) {
-          console.error("Usuário local encontrado, mas senha incorreta.");
-        } else {
-          console.error("Usuário não encontrado nem no Supabase nem localmente para o telefone:", cleanPhone);
+        if (user) {
+          console.log("Login via LocalStorage/Mock bem-sucedido:", user.name);
+          loggedUser = user;
         }
-        alert("Telefone ou senha incorretos.");
+      }
+
+      if (loggedUser) {
+        setAuth({ user: loggedUser, isAuthenticated: true });
+      } else {
+        const userExists = users.some(u => normalizePhone(u.phone) === cleanPhone);
+        const errorMsg = userExists ? "Senha incorreta." : "Usuário ou telefone não encontrado.";
+        setLoginError(errorMsg);
+        console.error(`Falha no login: ${errorMsg}. Tentado: ${cleanPhone}`);
       }
     } catch (err: any) {
       console.error("Falha crítica no processo de login:", err.message);
-      alert(`Erro ao realizar login: ${err.message}`);
+      setLoginError("Erro inesperado ao realizar login. Tente novamente.");
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
@@ -728,35 +745,88 @@ export default function Home() {
           ) : (
             <form onSubmit={handleLogin} className="space-y-4">
               <h2 className="text-xl font-semibold mb-4">Login</h2>
-              <input
-                type="text"
-                placeholder="Usuário ou Telefone"
-                required
-                className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
-                value={loginPhone}
-                onChange={e => setLoginPhone(e.target.value)}
-              />
-              <input
-                type="password"
-                placeholder="Senha"
-                required
-                className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
-                value={loginPass}
-                onChange={e => setLoginPass(e.target.value)}
-              />
-              <button className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 transition-colors">
-                Entrar
-              </button>
-              <div className="bg-zinc-50 p-3 rounded-lg border border-zinc-100 mt-4">
-                <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-widest mb-1">Acesso Rápido</p>
-                <p className="text-xs text-zinc-500">Usuário: <code className="font-bold text-blue-600">admin</code> | Senha: <code className="font-bold text-blue-600">admin</code></p>
+              
+              {loginError && (
+                <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm border border-red-100 mb-4 animate-in fade-in slide-in-from-top-1">
+                  {loginError}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest ml-1">Acesso</label>
+                <input
+                  type="text"
+                  placeholder="Usuário ou Telefone"
+                  required
+                  disabled={isAuthenticating}
+                  className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-zinc-50 disabled:text-zinc-400 transition-all"
+                  value={loginPhone}
+                  onChange={e => {
+                    setLoginPhone(e.target.value);
+                    if (loginError) setLoginError(null);
+                  }}
+                />
               </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest ml-1">Senha</label>
+                <input
+                  type="password"
+                  placeholder="Sua senha"
+                  required
+                  disabled={isAuthenticating}
+                  className="w-full p-3 rounded-lg border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-zinc-50 disabled:text-zinc-400 transition-all"
+                  value={loginPass}
+                  onChange={e => {
+                    setLoginPass(e.target.value);
+                    if (loginError) setLoginError(null);
+                  }}
+                />
+              </div>
+
+              <button 
+                disabled={isAuthenticating}
+                className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 transition-all disabled:bg-blue-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isAuthenticating ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Autenticando...
+                  </>
+                ) : "Entrar"}
+              </button>
+
+              <div className="bg-zinc-50 p-3 rounded-lg border border-zinc-100 mt-4">
+                <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-widest mb-1">Dica de Acesso</p>
+                <p className="text-xs text-zinc-500">
+                  Administrador: <button 
+                    type="button" 
+                    onClick={() => { setLoginPhone("admin"); setLoginPass("admin"); }}
+                    className="font-bold text-blue-600 hover:underline"
+                  >admin / admin</button>
+                </p>
+              </div>
+
               <button 
                 type="button"
+                disabled={isAuthenticating}
                 onClick={() => setIsRegistering(true)}
-                className="w-full text-zinc-500 text-sm pt-2"
+                className="w-full text-zinc-500 text-sm pt-2 hover:text-blue-600 transition-colors disabled:opacity-50"
               >
                 Não tem conta? Cadastre-se
+              </button>
+
+              <button 
+                type="button"
+                onClick={() => {
+                  if (confirm("Isso apagará todos os dados locais. Deseja continuar?")) {
+                    localStorage.clear();
+                    window.location.reload();
+                  }
+                }}
+                className="w-full text-zinc-300 text-[10px] mt-8 hover:text-zinc-500 transition-colors"
+              >
+                Limpar Cache Local
               </button>
             </form>
           )}
