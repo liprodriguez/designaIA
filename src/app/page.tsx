@@ -793,17 +793,6 @@ export default function Home() {
                 ) : "Entrar"}
               </button>
 
-              <div className="bg-zinc-50 p-3 rounded-lg border border-zinc-100 mt-4">
-                <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-widest mb-1">Dica de Acesso</p>
-                <p className="text-xs text-zinc-500">
-                  Administrador: <button 
-                    type="button" 
-                    onClick={() => { setLoginPhone("admin"); setLoginPass("admin"); }}
-                    className="font-bold text-blue-600 hover:underline"
-                  >admin / admin</button>
-                </p>
-              </div>
-
               <button 
                 type="button"
                 disabled={isAuthenticating}
