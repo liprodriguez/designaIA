@@ -159,43 +159,60 @@ export default function Home() {
     try {
       // 1. Tentar Login via Supabase (se configurado)
       if (isSupabaseConfigured()) {
-        // Consultando a tabela 'perfis' conforme solicitado
-        // Usamos maybeSingle() para evitar erro 406 caso o usuário não exista
-        const { data: profile, error } = await supabase
+        console.log("Consultando Supabase por telefone...");
+        // Buscamos apenas pelo telefone para ter mais clareza no erro se a senha falhar
+        const { data: profiles, error } = await supabase
           .from('perfis')
           .select('*')
-          .eq('phone', cleanPhone)
-          .eq('password', cleanPass)
-          .maybeSingle();
+          .eq('phone', cleanPhone);
 
         if (error) {
           console.error("Erro técnico na consulta ao Supabase:", error.message);
-          // Não lançamos erro aqui para permitir o fallback para LocalStorage se necessário
         }
 
-        if (profile) {
-          console.log("Login via Supabase bem-sucedido:", profile.name);
-          setAuth({ 
-            user: {
-              ...profile,
-              role: profile.role as UserRole,
-              linkedCategories: profile.linked_categories || []
-            }, 
-            isAuthenticated: true 
-          });
-          return;
+        if (profiles && profiles.length > 0) {
+          // Encontrou usuário(s) com este telefone
+          const profile = profiles.find(p => p.password === cleanPass);
+          
+          if (profile) {
+            console.log("Login via Supabase bem-sucedido:", profile.name);
+            setAuth({ 
+              user: {
+                ...profile,
+                role: profile.role as UserRole,
+                linkedCategories: profile.linked_categories || []
+              }, 
+              isAuthenticated: true 
+            });
+            return;
+          } else {
+            console.warn("Usuário encontrado no Supabase, mas a senha não confere.");
+            // Não retornamos aqui para tentar o fallback local se necessário
+          }
         } else {
-          console.log("Usuário não encontrado no Supabase para este telefone/senha.");
+          console.log("Nenhum usuário encontrado no Supabase com este telefone:", cleanPhone);
         }
       }
 
       // 2. Fallback para LocalStorage (Mock)
-      const user = users.find(u => normalizePhone(u.phone) === cleanPhone && u.password === cleanPass);
+      console.log("Tentando fallback para usuários locais/mock. Total carregado:", users.length);
+      const user = users.find(u => {
+        const uPhone = normalizePhone(u.phone);
+        const match = uPhone === cleanPhone && u.password === cleanPass;
+        return match;
+      });
+
       if (user) {
-        console.log("Login via LocalStorage bem-sucedido:", user.name);
+        console.log("Login via LocalStorage/Mock bem-sucedido:", user.name);
         setAuth({ user, isAuthenticated: true });
       } else {
-        console.error("Erro de autenticação: Credenciais não encontradas em nenhuma fonte.");
+        // Log detalhado para ajudar o desenvolvedor a entender por que falhou
+        const userByPhone = users.find(u => normalizePhone(u.phone) === cleanPhone);
+        if (userByPhone) {
+          console.error("Usuário local encontrado, mas senha incorreta.");
+        } else {
+          console.error("Usuário não encontrado nem no Supabase nem localmente para o telefone:", cleanPhone);
+        }
         alert("Telefone ou senha incorretos.");
       }
     } catch (err: any) {
@@ -210,11 +227,21 @@ export default function Home() {
     const cleanName = regName.trim();
     const cleanPass = regPass.trim();
 
+    // Verificação de duplicidade local
+    if (users.some(u => normalizePhone(u.phone) === cleanPhone)) {
+      alert("Este telefone já está cadastrado no sistema.");
+      return;
+    }
+
+    const userId = Math.random().toString(36).substr(2, 9);
+
     try {
       if (isSupabaseConfigured()) {
+        console.log("Registrando no Supabase:", { name: cleanName, phone: cleanPhone });
         const { error } = await supabase
           .from('perfis')
           .insert([{ 
+            id: userId,
             name: cleanName, 
             phone: cleanPhone, 
             password: cleanPass,
@@ -227,14 +254,14 @@ export default function Home() {
 
         if (error) {
           console.error("Erro ao registrar no Supabase:", error.message);
-          alert(`Erro no cadastro: ${error.message}`);
+          alert(`Erro no cadastro (Supabase): ${error.message}`);
           return;
         }
       }
 
       // Registro local também para manter consistência no protótipo
       const newUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
+        id: userId,
         name: cleanName,
         phone: cleanPhone,
         password: cleanPass,
@@ -249,9 +276,10 @@ export default function Home() {
       };
       setUsers([...users, newUser]);
       setIsRegistering(false);
-      alert("Cadastro realizado com sucesso!");
+      alert("Cadastro realizado com sucesso! Agora você pode fazer login.");
     } catch (err: any) {
-      console.error("Falha no cadastro:", err.message);
+      console.error("Falha no processo de cadastro:", err.message);
+      alert("Ocorreu um erro inesperado ao realizar o cadastro.");
     }
   };
 
