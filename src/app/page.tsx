@@ -92,13 +92,10 @@ export default function Home() {
 
     if (savedUsers) {
       const parsed = JSON.parse(savedUsers);
-      // Garantir que o admin/admin padrão sempre exista, mesmo com dados antigos
-      const hasAdmin = parsed.some((u: User) => u.phone === "admin");
-      if (!hasAdmin) {
-        setUsers([...parsed, MOCK_USERS[0]]);
-      } else {
-        setUsers(parsed);
-      }
+      // Garantir que o admin/admin padrão sempre exista e não duplique IDs
+      // Filtramos qualquer usuário que tenha o ID "admin_1" ou o telefone "admin" antes de adicionar o padrão
+      const filtered = parsed.filter((u: User) => u.id !== "admin_1" && u.phone !== "admin");
+      setUsers([MOCK_USERS[0], ...filtered]);
     } else {
       setUsers(MOCK_USERS);
     }
