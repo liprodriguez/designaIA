@@ -121,7 +121,7 @@ export default function Home() {
             const mappedUsers: User[] = dbUsers.map(u => ({
               ...u,
               role: u.role as UserRole,
-              linkedCategories: u.linked_categories || [],
+              linkedCategories: [],
               historyCount: u.history_count || 0,
               totalEvents: u.total_events || 0,
               lastParticipation: u.last_participation || null,
@@ -207,7 +207,7 @@ export default function Home() {
             loggedUser = {
               ...profile,
               role: profile.role as UserRole,
-              linkedCategories: profile.linked_categories || []
+              linkedCategories: []
             };
           } else {
             console.warn("Senha não confere para o usuário encontrado no Supabase.");
@@ -285,7 +285,6 @@ export default function Home() {
             phone: loginIdentifier, 
             password: cleanPass,
             role: "USER",
-            linked_categories: [],
             history_count: 0,
             total_events: 0
           }]);
@@ -522,8 +521,7 @@ export default function Home() {
               name: cleanName,
               phone: loginIdentifier,
               password: cleanPass || editingUser.password,
-              role: newUserRole,
-              linked_categories: newUserCats
+              role: newUserRole
             })
             .eq('id', editingUser.id);
 
@@ -553,7 +551,6 @@ export default function Home() {
               phone: loginIdentifier,
               password: cleanPass || "designa123",
               role: newUserRole,
-              linked_categories: newUserCats,
               history_count: 0,
               total_events: 0
             }]);
@@ -1410,13 +1407,6 @@ export default function Home() {
                                   : [...user.linkedCategories, cat.id];
                                 
                                 try {
-                                  if (isSupabaseConfigured()) {
-                                    const { error } = await supabase
-                                      .from('perfis')
-                                      .update({ linked_categories: newList })
-                                      .eq('id', user.id);
-                                    if (error) throw error;
-                                  }
                                   setUsers(users.map(u => u.id === user.id ? { ...u, linkedCategories: newList } : u));
                                 } catch (err: any) {
                                   console.error("Erro ao atualizar categoria do usuário:", err.message);
