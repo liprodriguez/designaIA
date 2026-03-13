@@ -291,24 +291,58 @@ export default function Home() {
 
 
   useEffect(() => {
-
     if (isClient) {
-
+      // 1. Mantém o backup no seu navegador (LocalStorage)
       localStorage.setItem("designaia_users", JSON.stringify(users));
-
       localStorage.setItem("designaia_categories", JSON.stringify(categories));
-
       localStorage.setItem("designaia_events", JSON.stringify(events));
-
       localStorage.setItem("designaia_auth", JSON.stringify(auth));
-
       localStorage.setItem("designaia_template", whatsappTemplate);
 
+      // 2. ENVIA PARA A NUVEM (O que faz ser um SaaS)
+      const persistToCloud = async () => {
+        // Só salva se houver um ADMIN logado
+        if (isSupabaseConfigured() && auth.user?.role === "ADMIN") {
+          try {
+            // Salva os Usuários e as Categorias que você vinculou (O segredo do F5)
+            await supabase.from('perfis').upsert(users.map(u => ({
+              id: u.id,
+              name: u.name,
+              phone: u.phone,
+              password: u.password,
+              role: u.role,
+              linked_categories: u.linkedCategories || [], // Aqui salva o vínculo!
+              history_count: u.historyCount,
+              total_events: u.totalEvents,
+              is_active: u.isActive
+            })));
+
+            // Salva as Categorias (Funções)
+            await supabase.from('categorias').upsert(categories.map(c => ({
+              id: c.id,
+              name: c.name
+            })));
+
+            // Salva os Eventos/Escalas
+            await supabase.from('event_schedules').upsert(events.map(e => ({
+              id: e.id,
+              date: e.date,
+              name: e.name,
+              assignments: e.assignments,
+              is_fixed: e.isFixed,
+              is_finalized: e.isFinalized
+            })));
+
+            console.log("☁️ Sincronizado com o Supabase!");
+          } catch (err) {
+            console.error("Erro na sincronização de saída:", err);
+          }
+        }
+      };
+
+      persistToCloud();
     }
-
   }, [users, categories, events, auth, whatsappTemplate, isClient]);
-
-
 
   // --- Utils ---
 
