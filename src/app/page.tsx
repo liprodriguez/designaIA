@@ -291,21 +291,57 @@ export default function Home() {
 
 
   useEffect(() => {
-
     if (isClient) {
-
+      // Backup Local
       localStorage.setItem("designaia_users", JSON.stringify(users));
-
       localStorage.setItem("designaia_categories", JSON.stringify(categories));
-
       localStorage.setItem("designaia_events", JSON.stringify(events));
-
       localStorage.setItem("designaia_auth", JSON.stringify(auth));
-
       localStorage.setItem("designaia_template", whatsappTemplate);
 
-    }
+      const syncSaaS = async () => {
+        // Verifica se é ADMIN para salvar
+        if (isSupabaseConfigured() && auth.user?.role === "ADMIN") {
+          try {
+            // Salvando Usuários
+            await supabase.from('perfis').upsert(users.map(u => ({
+              id: u.id,
+              name: u.name,
+              phone: u.phone,
+              password: u.password,
+              role: u.role,
+              linked_categories: u.linkedCategories, // Mapeamento para o banco
+              history_count: u.historyCount,
+              total_events: u.totalEvents,
+              last_participation: u.lastParticipation,
+              is_active: u.isActive
+            })));
 
+            // Salvando Categorias
+            await supabase.from('categorias').upsert(categories.map(c => ({
+              id: c.id,
+              name: c.name
+            })));
+
+            // Salvando Escalas
+            await supabase.from('event_schedules').upsert(events.map(e => ({
+              id: e.id,
+              date: e.date,
+              name: e.name,
+              assignments: e.assignments,
+              is_fixed: e.isFixed,
+              is_finalized: e.isFinalized
+            })));
+
+            console.log("☁️ Sincronização SaaS concluída!");
+          } catch (err) {
+            console.error("Erro na sincronização:", err);
+          }
+        }
+      };
+
+      syncSaaS();
+    }
   }, [users, categories, events, auth, whatsappTemplate, isClient]);
 
 
