@@ -1,8 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Usamos valores placeholder para evitar erro de build caso as variáveis não estejam no .env local
-// O código no page.tsx já verifica a existência das variáveis reais antes de usar o cliente.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder-project.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
+// Valores extraídos das suas variáveis de ambiente ou inseridos diretamente
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://djunuewwlzttyxvtitie.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_ArD1cIRTEcBjWGt7ZN1TMA_YO2PRPvh';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
