@@ -291,21 +291,55 @@ export default function Home() {
 
 
   useEffect(() => {
-
     if (isClient) {
-
+      // --- Mantém o salvamento local atual ---
       localStorage.setItem("designaia_users", JSON.stringify(users));
-
       localStorage.setItem("designaia_categories", JSON.stringify(categories));
-
       localStorage.setItem("designaia_events", JSON.stringify(events));
-
       localStorage.setItem("designaia_auth", JSON.stringify(auth));
-
       localStorage.setItem("designaia_template", whatsappTemplate);
 
-    }
+      // --- NOVA LÓGICA: Sincronização Silenciosa com Supabase ---
+      const autoSyncCloud = async () => {
+        // Só sincroniza se houver um ADMIN logado para evitar erros de permissão
+        if (isSupabaseConfigured() && auth.user?.role === "ADMIN") {
+          try {
+            // Envia Usuários para a tabela 'perfis'
+            await supabase.from('perfis').upsert(
+              users.map(u => ({
+                id: u.id,
+                name: u.name,
+                phone: u.phone,
+                password: u.password,
+                role: u.role,
+                history_count: u.historyCount,
+                total_events: u.totalEvents,
+                last_participation: u.lastParticipation,
+                role_stats: u.roleStats,
+                is_active: u.isActive
+              }))
+            );
 
+            // Envia Escalas para a tabela 'event_schedules'
+            await supabase.from('event_schedules').upsert(
+              events.map(e => ({
+                id: e.id,
+                date: e.date,
+                name: e.name,
+                assignments: e.assignments,
+                is_fixed: e.isFixed,
+                is_finalized: e.isFinalized
+              }))
+            );
+            console.log("☁️ Supabase atualizado automaticamente.");
+          } catch (err) {
+            console.error("Erro na sincronização automática:", err);
+          }
+        }
+      };
+
+      autoSyncCloud();
+    }
   }, [users, categories, events, auth, whatsappTemplate, isClient]);
 
 
