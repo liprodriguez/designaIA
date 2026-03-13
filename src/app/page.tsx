@@ -171,60 +171,60 @@ export default function Home() {
   // --- Effects ---
 
   useEffect(() => {
-
     setIsClient(true);
-
-    const savedUsers = localStorage.getItem("designaia_users");
-
-    const savedCats = localStorage.getItem("designaia_categories");
-
-    const savedEvents = localStorage.getItem("designaia_events");
-
-    const savedAuth = localStorage.getItem("designaia_auth");
-
-    const savedTemplate = localStorage.getItem("designaia_template");
-
-
-
-    if (savedUsers) {
-
-      const parsed = JSON.parse(savedUsers);
-
-      // Garantir que o admin/admin padrão sempre exista e seja o único com esse ID/Username
-
-      const adminPadrão = MOCK_USERS[0];
-
-      const outrosUsers = parsed.filter((u: User) => u.id !== adminPadrão.id && u.phone !== adminPadrão.phone);
-
-      setUsers([adminPadrão, ...outrosUsers]);
-
-    } else {
-
-      setUsers(MOCK_USERS);
-
-    }
-
-
-
-    if (savedCats) setCategories(JSON.parse(savedCats));
-
-    else setCategories(MOCK_CATEGORIES);
-
-
-
-    if (savedEvents) setEvents(JSON.parse(savedEvents));
-
     
+    const loadAllDataFromCloud = async () => {
+      if (isSupabaseConfigured()) {
+        try {
+          console.log("🔄 SaaS: Carregando dados da nuvem...");
+          
+          // Busca usuários, categorias e eventos ao mesmo tempo
+          const [resUsers, resCats, resEvents] = await Promise.all([
+            supabase.from('perfis').select('*'),
+            supabase.from('categorias').select('*'),
+            supabase.from('event_schedules').select('*')
+          ]);
 
-    if (savedAuth) setAuth(JSON.parse(savedAuth));
+          // Carrega Usuários
+          if (resUsers.data && resUsers.data.length > 0) {
+            setUsers(resUsers.data.map(u => ({
+              ...u,
+              linkedCategories: u.linked_categories || [], // Restaura os vínculos
+              historyCount: u.history_count || 0,
+              totalEvents: u.total_events || 0,
+              role: u.role as UserRole
+            })));
+          } else {
+            setUsers(MOCK_USERS); // Se banco vazio, usa o padrão
+          }
 
-    if (savedTemplate) setWhatsappTemplate(savedTemplate);
+          // Carrega Categorias
+          if (resCats.data && resCats.data.length > 0) {
+            setCategories(resCats.data);
+          } else {
+            setCategories(MOCK_CATEGORIES); // Se banco vazio, usa o padrão
+          }
 
+          // Carrega Eventos/Escalas
+          if (resEvents.data && resEvents.data.length > 0) {
+            setEvents(resEvents.data);
+          }
 
+          // Auth permanece no localStorage por segurança de login
+          const savedAuth = localStorage.getItem("designaia_auth");
+          if (savedAuth) setAuth(JSON.parse(savedAuth));
+          
+          const savedTemplate = localStorage.getItem("designaia_template");
+          if (savedTemplate) setWhatsappTemplate(savedTemplate);
 
-    // Sincronizar com Supabase se disponível
+        } catch (err) {
+          console.error("Erro crítico ao ler nuvem:", err);
+        }
+      }
+    };
 
-    const syncWithSupabase = async () => {
+    loadAllDataFromCloud();
+  }, []);
 
       if (isSupabaseConfigured()) {
 
@@ -291,21 +291,58 @@ export default function Home() {
 
 
   useEffect(() => {
-
     if (isClient) {
-
+      // Salva localmente para backup imediato
       localStorage.setItem("designaia_users", JSON.stringify(users));
-
       localStorage.setItem("designaia_categories", JSON.stringify(categories));
-
       localStorage.setItem("designaia_events", JSON.stringify(events));
-
       localStorage.setItem("designaia_auth", JSON.stringify(auth));
-
       localStorage.setItem("designaia_template", whatsappTemplate);
 
-    }
+      // ENVIA PARA A NUVEM (SUPABASE)
+      const persistToCloud = async () => {
+        if (isSupabaseConfigured() && auth.user?.role === "ADMIN") {
+          try {
+            // 1. Salva Perfis e seus Vínculos de Categorias
+            await supabase.from('perfis').upsert(users.map(u => ({
+              id: u.id,
+              name: u.name,
+              phone: u.phone,
+              password: u.password,
+              role: u.role,
+              linked_categories: u.linkedCategories, // Aqui salva as marcações!
+              history_count: u.historyCount,
+              total_events: u.totalEvents,
+              last_participation: u.lastParticipation,
+              role_stats: u.roleStats,
+              is_active: u.isActive
+            })));
 
+            // 2. Salva as Categorias em si
+            await supabase.from('categorias').upsert(categories.map(c => ({
+              id: c.id,
+              name: c.name
+            })));
+
+            // 3. Salva os Eventos/Escalas
+            await supabase.from('event_schedules').upsert(events.map(e => ({
+              id: e.id,
+              date: e.date,
+              name: e.name,
+              assignments: e.assignments,
+              is_fixed: e.isFixed,
+              is_finalized: e.isFinalized
+            })));
+
+            console.log("☁️ Sincronização de saída concluída!");
+          } catch (err) {
+            console.error("Erro ao persistir dados:", err);
+          }
+        }
+      };
+
+      persistToCloud();
+    }
   }, [users, categories, events, auth, whatsappTemplate, isClient]);
 
 
